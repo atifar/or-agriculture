@@ -1,5 +1,5 @@
 from django.contrib.auth.models import User, Group
-from api.models import Metadata
+from api.models import Metadata, NassAnimalsSales
 from rest_framework import serializers
 
 
@@ -26,4 +26,15 @@ class MetadataSerializer(serializers.HyperlinkedModelSerializer):
             'field',
             'source_name',
             'source_link'
+        )
+
+
+class NassAnimalsSalesSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = NassAnimalsSales
+        fields = (
+            'commodity',
+            'year',
+            'fips',
+            'animals'
         )
