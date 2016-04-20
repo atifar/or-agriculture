@@ -27,6 +27,7 @@ from .serializers import (
     GroupSerializer,
     MetadataSerializer,
     NassAnimalsSalesSerializer,
+    NassAnimalsSalesSerializerWrapped,
 )
 
 
@@ -83,7 +84,11 @@ class NassAnimalsSalesList(APIView):
             animal_sales = NassAnimalsSales.objects.filter(**query)
         else:
             animal_sales = NassAnimalsSales.objects.all()
-        serializer = NassAnimalsSalesSerializer(animal_sales, many=True)
+        serializer = NassAnimalsSalesSerializerWrapped({
+            "error": None,
+            "rows": animal_sales.count(),
+            "data": animal_sales
+        })
         return Response(serializer.data)
 
 

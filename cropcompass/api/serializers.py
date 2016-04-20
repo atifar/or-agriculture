@@ -38,3 +38,9 @@ class NassAnimalsSalesSerializer(serializers.HyperlinkedModelSerializer):
             'fips',
             'animals'
         )
+
+
+class NassAnimalsSalesSerializerWrapped(serializers.Serializer):
+    error = serializers.CharField(max_length=200, allow_blank=True)
+    rows = serializers.IntegerField()
+    data = NassAnimalsSalesSerializer(many=True)
