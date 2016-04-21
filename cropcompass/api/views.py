@@ -31,6 +31,23 @@ from .serializers import (
 )
 
 
+class FilteredAPIView(APIView):
+    """
+    APIView extended with filtered query dictionary generator method
+    """
+    @staticmethod
+    def query_dict(query_params, filter_fields):
+        # Build dictionary of filter parameters (exclude 'format', etc.)
+        filter_params = {}
+        for param in query_params.keys():
+            if param in filter_fields:
+                vals = query_params.getlist(param)
+                filter_params[param] = vals
+        # Augment dictionary keys with __in for looking up list inclusion
+        query = {key + '__in': vals for key, vals in filter_params.items()}
+        return query
+
+
 class UserViewSet(viewsets.ModelViewSet):
     """
     API endpoint that allows users to be viewed or edited.
@@ -55,7 +72,7 @@ class MetadataViewSet(viewsets.ModelViewSet):
     serializer_class = MetadataSerializer
 
 
-class NassAnimalsSalesList(APIView):
+class NassAnimalsSalesList(FilteredAPIView):
     """
     List animal sales or create new instance.
     """
@@ -72,14 +89,8 @@ class NassAnimalsSalesList(APIView):
         # Accepted fields for filtering output
         FILTER_FIELDS = ['commodity', 'year']
         if request.query_params:
-            # Build dictionary of filter parameters (exclude 'format', etc.)
-            filter_params = {}
-            for param in request.query_params.keys():
-                if param in FILTER_FIELDS:
-                    vals = request.query_params.getlist(param)
-                    filter_params[param] = vals
-            # Augment dictionary keys with __in for looking up list inclusion
-            query = {key + '__in': vals for key, vals in filter_params.items()}
+            # Generate query filter dictionary
+            query = self.query_dict(request.query_params, FILTER_FIELDS)
             # Generate queryset
             animal_sales = NassAnimalsSales.objects.filter(**query)
         else:

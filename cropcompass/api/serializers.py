@@ -29,7 +29,7 @@ class MetadataSerializer(serializers.HyperlinkedModelSerializer):
         )
 
 
-class NassAnimalsSalesSerializer(serializers.HyperlinkedModelSerializer):
+class NassAnimalsSalesSerializer(serializers.ModelSerializer):
     class Meta:
         model = NassAnimalsSales
         fields = (
