@@ -17,17 +17,16 @@ in any order, including multiple values for the same key.
 """
 
 from django.contrib.auth.models import User, Group
-from django.http import Http404
-from rest_framework import viewsets, status
+from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Metadata, NassAnimalsSales
+from .models import Metadata, NassAnimalsSales, SubsidyDollars
 from .serializers import (
     UserSerializer,
     GroupSerializer,
     MetadataSerializer,
-    NassAnimalsSalesSerializer,
     NassAnimalsSalesSerializerWrapped,
+    SubsidyDollarsSerializerWrapped,
 )
 
 
@@ -74,16 +73,17 @@ class MetadataViewSet(viewsets.ModelViewSet):
 
 class NassAnimalsSalesList(FilteredAPIView):
     """
-    List animal sales or create new instance.
+    List animal sales.
     """
     def get(self, request, format=None):
         """List animal sales with optional filtering from nass_animals_sales.
 
-        Example 1: GET /nass_animals_sales/
+        Example 1: GET /data/nass_animals_sales/
         Returns all rows of the table in browsable API format, which is the default format, also specifiable by the query parameter "format=api".
 
         Example 2:
-        GET /nass_animals_sales/?year=1997&commodity=Bison&year=2002&format=json
+        GET /data/nass_animals_sales/?year=1997&
+            commodity=Bison&year=2002&format=json
         Returns rows of Bison from 1997 and 2002 in JSON format.
         """
         # Accepted fields for filtering output
@@ -103,23 +103,33 @@ class NassAnimalsSalesList(FilteredAPIView):
         return Response(serializer.data)
 
 
-class NassAnimalsSalesDetail(APIView):
+class SubsidyDollarsList(FilteredAPIView):
     """
-    Retrieve animal sales instance.
+    List subsidy dollars.
     """
-    def get_object(self, pk):
-        try:
-            return NassAnimalsSales.objects.get(pk=pk)
-        except NassAnimalsSales.DoesNotExist:
-            raise Http404
+    def get(self, request, format=None):
+        """List subsidy dollars with optional filtering from subsidy_dollars.
 
-    def get(self, request, pk, format=None):
-        """Retrieve animal sales instance from nass_animals_sales.
+        Example 1: GET /data/subsidy_dollars/
+        Returns all rows of the table in browsable API format, which is the default format, also specifiable by the query parameter "format=api".
 
-        Example 1:
-        GET /nass_animals_sales/2803/
-        Returns the item with the id of 2803.
+        Example 2:
+        GET /data/subsidy_dollars/?year=1997&
+            commodity=Bison&format=json
+        Returns rows of Bison from 1997 in JSON format.
         """
-        animal_sales = self.get_object(pk)
-        serializer = NassAnimalsSalesSerializer(animal_sales)
+        # Accepted fields for filtering output
+        FILTER_FIELDS = ['commodity', 'year']
+        if request.query_params:
+            # Generate query filter dictionary
+            query = self.query_dict(request.query_params, FILTER_FIELDS)
+            # Generate queryset
+            subsidy_dollars = SubsidyDollars.objects.filter(**query)
+        else:
+            subsidy_dollars = SubsidyDollars.objects.all()
+        serializer = SubsidyDollarsSerializerWrapped({
+            "error": None,
+            "rows": subsidy_dollars.count(),
+            "data": subsidy_dollars
+        })
         return Response(serializer.data)

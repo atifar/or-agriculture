@@ -28,9 +28,7 @@ router.register(r'metadata', views.MetadataViewSet)
 urlpatterns = [
     # url(r'^admin/', admin.site.urls),
     url(r'^', include(router.urls)),
-    url(r'^nass_animals_sales/$', views.NassAnimalsSalesList.as_view()),
-    url(r'^nass_animals_sales/(?P<pk>[0-9]+)/$',
-        views.NassAnimalsSalesDetail.as_view()
-        ),
+    url(r'^data/nass_animals_sales/$', views.NassAnimalsSalesList.as_view()),
+    url(r'^data/subsidy_dollars/$', views.SubsidyDollarsList.as_view()),
     url(r'^api-auth/', include('rest_framework.urls', namespace='rest_framework'))
 ]
