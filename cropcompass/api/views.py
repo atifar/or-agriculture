@@ -17,10 +17,17 @@ in any order, including multiple values for the same key.
 """
 
 from django.contrib.auth.models import User, Group
+from django.db.models import Max
 from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Metadata, NassAnimalsSales, SubsidyDollars
+from collections import OrderedDict
+from .models import (
+    Metadata,
+    NassAnimalsSales,
+    SubsidyDollars,
+    RegionLookup
+)
 from .serializers import (
     UserSerializer,
     GroupSerializer,
@@ -28,6 +35,47 @@ from .serializers import (
     NassAnimalsSalesSerializerWrapped,
     SubsidyDollarsSerializerWrapped,
 )
+
+# Metadata dictionary of database tables keyed on the table_name. It will
+# be populated when the first view that needs it is called.
+metadata_dict = {}
+
+
+def fetch_metadata():
+    """
+    Fetch the metadata table, and store it in metadata_dict.
+    """
+    metadata = OrderedDict()
+    metadata_query = Metadata.objects.all()
+    for table in metadata_query:
+        metadata['name'] = table.name
+        metadata['description'] = table.description
+        metadata['table_name'] = table.table_name
+        metadata['unit'] = table.unit
+        metadata['field'] = table.field
+        metadata['source_name'] = table.source_name
+        metadata['source_link'] = table.source_link
+        # Add the metadata to metadata_dict
+        metadata_dict[table.table_name] = metadata.copy()
+
+
+def get_most_recent_year(model):
+    """
+    Return the most recent year for a model (database table).
+    """
+    return model.objects.all().aggregate(Max('year'))['year__max']
+
+
+# Oregon region -> fips lookup dictionary
+region_to_fips = {}
+
+
+def fetch_region_lookup():
+    """
+    Fetch region lookup table, and store it in region_to_fips dictionary.
+    """
+    for region_entry in RegionLookup.objects.all().values('region', 'fips'):
+        region_to_fips[region_entry['region']] = region_entry['fips']
 
 
 class FilteredAPIView(APIView):
@@ -83,8 +131,8 @@ class NassAnimalsSalesList(FilteredAPIView):
 
         Example 2:
         GET /data/nass_animals_sales/?year=1997&
-            commodity=Bison&year=2002&format=json
-        Returns rows of Bison from 1997 and 2002 in JSON format.
+            commodity=Corn&year=2002&format=json
+        Returns rows of Corn from 1997 and 2002 in JSON format.
         """
         # Accepted fields for filtering output
         FILTER_FIELDS = ['commodity', 'year']
@@ -105,7 +153,7 @@ class NassAnimalsSalesList(FilteredAPIView):
 
 class SubsidyDollarsList(FilteredAPIView):
     """
-    List subsidy dollars.
+    List subsidy dollars, optionally filtered on commodity and/or year.
     """
     def get(self, request, format=None):
         """List subsidy dollars with optional filtering from subsidy_dollars.
@@ -115,8 +163,8 @@ class SubsidyDollarsList(FilteredAPIView):
 
         Example 2:
         GET /data/subsidy_dollars/?year=1997&
-            commodity=Bison&format=json
-        Returns rows of Bison from 1997 in JSON format.
+            commodity=Corn&format=json
+        Returns rows of Corn from 1997 in JSON format.
         """
         # Accepted fields for filtering output
         FILTER_FIELDS = ['commodity', 'year']
@@ -133,3 +181,72 @@ class SubsidyDollarsList(FilteredAPIView):
             "data": subsidy_dollars
         })
         return Response(serializer.data)
+
+
+class SubsidyDollarsTable(APIView):
+    """
+    Table of (commodity -> subsidy dollars) for Oregon or selected county.
+    """
+    @staticmethod
+    def fill_in_data(query, data_array):
+        """Populate data array from the query"""
+        for row in query:
+            data_array['data'].append({
+                'commodity': row.commodity,
+                'subsidy_dollars': row.subsidy_dollars
+            })
+
+    def get(self, request, format=None):
+        """Return table of county or Oregon state (commodity -> subsidy
+        dollars) for the most recent year for which data is available.
+
+        Example 1: GET /table/subsidy_dollars/?format=json
+        Returns the table (commodity -> subsidy dollars) for all of Oregon
+        in JSON format.
+
+        Example 2: GET /table/subsidy_dollars/?county=Linn&format=json
+        Returns the table (commodity -> subsidy dollars) for Linn County
+        in JSON format.
+
+        Selecting a commodity or a year has no effect on the returned subsidy data.
+
+        Use format=api or no query parameter to get browsable api results.
+        """
+        # Fetch metadata and region lookup tables from database if necessary
+        if not metadata_dict:
+            fetch_metadata()
+        if not region_to_fips:
+            fetch_region_lookup()
+        # Get the most recent year for subsidy dollars
+        latest_year = get_most_recent_year(SubsidyDollars)
+        data = {
+            'error': None,
+            'unit': metadata_dict['subsidy_dollars']['unit'],
+            'year': latest_year,
+            'description': 'Subsidy dollars for each commodity in {}',
+            'data': []
+        }
+        # If a county has been selected in the query parameters
+        if 'county' in request.query_params:
+            county = request.query_params['county']
+            subsidy_dollars = SubsidyDollars.objects.filter(
+                year=latest_year,
+                fips=region_to_fips[county])
+            data['description'] = data['description'].format(county) + ' County'
+            data.update({
+                'rows': subsidy_dollars.count(),
+                'region': county,
+            })
+            self.fill_in_data(subsidy_dollars, data)
+        # If no county is specified, return Oregon total subsidies
+        else:
+            subsidy_dollars = SubsidyDollars.objects.filter(
+                year=latest_year,
+                fips=41000)
+            data['description'] = data['description'].format('Oregon')
+            data.update({
+                'rows': subsidy_dollars.count(),
+                'region': 'Oregon (Statewide)',
+            })
+            self.fill_in_data(subsidy_dollars, data)
+        return Response(data)
