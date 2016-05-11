@@ -17,6 +17,7 @@ in any order, including multiple values for the same key.
 """
 
 from django.contrib.auth.models import User, Group
+from django.core.exceptions import FieldError
 from django.db.models import Max
 from rest_framework import viewsets
 from rest_framework.views import APIView
@@ -36,45 +37,60 @@ from .serializers import (
     SubsidyDollarsSerializerWrapped,
 )
 
-# Metadata dictionary of database tables keyed on the table_name. It will
-# be populated when the first view that needs it is called.
+# Metadata dictionary of database tables keyed on the table_name. It will be
+# populated by fetch_metadata() when the first view that needs it is called.
 metadata_dict = {}
+# Oregon region -> fips lookup dictionary.  It will be
+# populated by fetch_metadata() when the first view that needs it is called.
+region_to_fips = {}
+
+METADATA_FIELDS = (
+    'name',
+    'description',
+    'table_name',
+    'unit',
+    'field',
+    'source_name',
+    'source_link'
+)
 
 
-def fetch_metadata():
+def fetch_metadata(metadata_model):
     """
     Fetch the metadata table, and store it in metadata_dict.
     """
     metadata = OrderedDict()
-    metadata_query = Metadata.objects.all()
+    metadata_query = metadata_model.objects.all()
     for table in metadata_query:
-        metadata['name'] = table.name
-        metadata['description'] = table.description
-        metadata['table_name'] = table.table_name
-        metadata['unit'] = table.unit
-        metadata['field'] = table.field
-        metadata['source_name'] = table.source_name
-        metadata['source_link'] = table.source_link
-        # Add the metadata to metadata_dict
+        for field in METADATA_FIELDS:
+            metadata[field] = table.__dict__[field]
+            # Add the metadata to metadata_dict
         metadata_dict[table.table_name] = metadata.copy()
 
 
 def get_most_recent_year(model):
     """
-    Return the most recent year for a model (database table).
+    Return the most recent year for a model from the database.
+
+    If the model does not exist or it has no year field, None is returned.
     """
-    return model.objects.all().aggregate(Max('year'))['year__max']
+    try:
+        return model.objects.all().aggregate(Max('year'))['year__max']
+    except AttributeError:  # model does not exist
+        return None
+    except FieldError:  # model does not have a year field
+        return None
 
 
-# Oregon region -> fips lookup dictionary
-region_to_fips = {}
-
-
-def fetch_region_lookup():
+def fetch_region_lookup(region_lookup_model):
     """
-    Fetch region lookup table, and store it in region_to_fips dictionary.
+    Fetch region lookup table. Stores only region and fips fields in
+    region_to_fips dictionary.
     """
-    for region_entry in RegionLookup.objects.all().values('region', 'fips'):
+    for region_entry in region_lookup_model.objects.all().values(
+        'region',
+        'fips'
+    ):
         region_to_fips[region_entry['region']] = region_entry['fips']
 
 
@@ -208,15 +224,16 @@ class SubsidyDollarsTable(APIView):
         Returns the table (commodity -> subsidy dollars) for Linn County
         in JSON format.
 
-        Selecting a commodity or a year has no effect on the returned subsidy data.
+        Selecting a commodity or a year has no effect on the returned
+        subsidy data.
 
         Use format=api or no query parameter to get browsable api results.
         """
         # Fetch metadata and region lookup tables from database if necessary
         if not metadata_dict:
-            fetch_metadata()
+            fetch_metadata(Metadata)
         if not region_to_fips:
-            fetch_region_lookup()
+            fetch_region_lookup(RegionLookup)
         # Get the most recent year for subsidy dollars
         latest_year = get_most_recent_year(SubsidyDollars)
         data = {
