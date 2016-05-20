@@ -25,7 +25,7 @@ This procedure has been adapted from the [API setup in the Hack Oregon or-agricu
 
 `CREATE USER alex with CREATEUSER;`
 
-`ALTER USER alex PASSWORD mysecretpassword;`
+`ALTER USER alex PASSWORD 'mysecretpassword';`
 
 `CREATE database alex;`
 
